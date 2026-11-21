@@ -12,6 +12,21 @@ PADRAO_ND = re.compile(r"\bnd\s+(\d+(?:/\d+)?)", re.IGNORECASE)
 PADRAO_TITULO = re.compile(r"^(.+?)\s+nd\s+(\d+(?:/\d+)?)\s*$", re.IGNORECASE)
 
 
+# Exceções que o texto extraído não resolve sozinho.
+# (página, nº da ficha na página, começando em 1): (nome, nd, observação sobre o ND)
+CORRECOES = {
+    (24, 1): ("Dandara", 5, None),
+    (25, 1): ("Neri", 5, None),
+    (41, 1): ("Árvore de Ninfa", None, "invocação, sem ND"),
+    (49, 1): ("Cyeta", None, "variável"),
+}
+
+
+def nome_do_cabecalho(texto):
+    texto = re.sub(r"\(.*?\)", "", texto)  # tira "(nd 5 cada)"
+    return formatar_nome(PADRAO_ND.sub("", texto))
+
+
 def nd_para_numero(texto):
     if "/" in texto:
         a, b = texto.split("/")
@@ -94,7 +109,9 @@ def associar(fichas, titulos):
 
 def processar():
     paginas = ler_paginas()
-    chunks, avisos, sem_titulo, sem_nome_desc = [], [], [], []
+    chunks, avisos = [], []
+    sem_titulo, orfaos_rel, herdadas, sem_nome_desc = [], [], [], []
+    ultimo_nome = None
     for numero in range(PAG_INICIO, PAG_FIM + 1):
         if numero not in paginas:
             continue
@@ -103,48 +120,69 @@ def processar():
         titulos, cabecalhos = achar_titulos(linhas)
         associar(fichas, titulos)
 
-        usadas = set()
-        nomes_pagina = []
+        usadas, nomes_fichas = set(), []
         for k, f in enumerate(fichas):
             t = f.get("titulo")
-            nome, nd = (t["nome"], t["nd"]) if t else (None, None)
-            if t is None:
+            nome, nd, obs = (t["nome"], t["nd"], None) if t else (None, None, None)
+            if (numero, k + 1) in CORRECOES:
+                nome, nd, obs = CORRECOES[(numero, k + 1)]
+            if nome is None:
                 sem_titulo.append(f"p.{numero} (ficha {k + 1})")
+                cab = "(nome não identificado)"
             else:
-                nomes_pagina.append(nome)
+                nomes_fichas.append(nome)
+                if nd is not None:
+                    cab = f"{nome} (ND {nd})"
+                else:
+                    cab = f"{nome} (ND {obs})" if obs else nome
             usadas.update(range(f["inicio"], f["fim"] + 1))
             if t:
                 usadas.add(t["linha"])
             corpo = "\n".join(linhas[f["inicio"]:f["fim"] + 1])
-            cab = f"{nome} (ND {nd})" if t else "(nome não identificado)"
-            chunks.append({"tipo": "ficha", "nome": nome, "nd": nd, "pagina": numero,
-                           "texto": f"{cab}\n{corpo}"})
+            chunks.append({"tipo": "ficha", "nome": nome, "nd": nd, "nd_obs": obs,
+                           "pagina": numero, "texto": f"{cab}\n{corpo}"})
 
-        # descrição: o que sobrou na página (sem fichas, títulos e cabeçalhos)
+        # títulos que não ficaram com nenhuma ficha da página
+        ligados = {f["titulo"]["linha"] for f in fichas if "titulo" in f}
+        orfaos = [t for t in titulos if t["linha"] not in ligados]
+        for t in orfaos:
+            usadas.add(t["linha"])
+            orfaos_rel.append(f"p.{numero} {t['nome']} (ND {t['nd']})")
         for c in cabecalhos:
             usadas.add(c["linha"])
-        nomes_min = {n.lower() for n in nomes_pagina}
+
+        # nome para o trecho de descrição desta página
+        nomes = nomes_fichas + [t["nome"] for t in orfaos]
+        if nomes:
+            nome_desc = " / ".join(nomes)
+        elif cabecalhos:
+            nome_desc = nome_do_cabecalho(cabecalhos[0]["texto"])
+        else:
+            nome_desc = None
+        if nome_desc:
+            ultimo_nome = nome_desc
+
+        nomes_min = {n.lower() for n in nomes}
         resto = [l for i, l in enumerate(linhas) if i not in usadas and l.lower() not in nomes_min]
         descricao = "\n".join(resto)
         if len(descricao) >= 80:
-            if nomes_pagina:
-                nome_desc = " / ".join(nomes_pagina)
-            elif cabecalhos:
-                nome_desc = cabecalhos[0]["texto"]
-            else:
-                nome_desc = None
-                sem_nome_desc.append(f"p.{numero}")
-            chunks.append({"tipo": "descricao", "nome": nome_desc, "nd": None, "pagina": numero,
+            if nome_desc is None:
+                nome_desc = ultimo_nome  # página de continuação: herda o nome anterior
+                (herdadas if nome_desc else sem_nome_desc).append(f"p.{numero}")
+            chunks.append({"tipo": "descricao", "nome": nome_desc, "nd": None, "nd_obs": None,
+                           "pagina": numero,
                            "texto": f"{nome_desc or '(nome não identificado)'} (descrição)\n{descricao}"})
 
     for i, c in enumerate(chunks):
         c["id"] = i
     SAIDA.write_text(json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    fichas = [c for c in chunks if c["tipo"] == "ficha"]
-    print("Fichas:", len(fichas))
-    print("Trechos de descrição:", len(chunks) - len(fichas))
+    n_fichas = sum(1 for c in chunks if c["tipo"] == "ficha")
+    print("Fichas:", n_fichas)
+    print("Trechos de descrição:", len(chunks) - n_fichas)
     print("Fichas sem título:", sem_titulo or "nenhuma")
+    print("Títulos sem ficha na página:", orfaos_rel or "nenhum")
+    print("Descrições que herdaram o nome da página anterior:", herdadas or "nenhuma")
     print("Descrições sem nome:", sem_nome_desc or "nenhuma")
     print("Avisos:", avisos or "nenhum")
 
