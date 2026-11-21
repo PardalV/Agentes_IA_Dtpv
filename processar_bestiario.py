@@ -17,9 +17,12 @@ PADRAO_TITULO = re.compile(r"^(.+?)\s+nd\s+(\d+(?:/\d+)?)\s*$", re.IGNORECASE)
 CORRECOES = {
     (24, 1): ("Dandara", 5, None),
     (25, 1): ("Neri", 5, None),
-    (41, 1): ("Árvore de Ninfa", None, "invocação, sem ND"),
+    (41, 1): ("Ninfa do Pântano", 5, None),  # o título está na p.40, a ficha na p.41
     (49, 1): ("Cyeta", None, "variável"),
 }
+
+# Entradas do livro que são eventos (têm ND no título, mas não têm ficha de monstro).
+EVENTOS = {"Lien Anima": 10, "Faulheit - Preguiça": 9}
 
 
 def nome_do_cabecalho(texto):
@@ -34,8 +37,12 @@ def nd_para_numero(texto):
     return int(texto)
 
 
+PEQUENAS = {"de", "do", "da", "dos", "das", "e"}
+
+
 def formatar_nome(nome):
-    return re.sub(r"\s+", " ", nome).strip().lower().title()
+    palavras = re.sub(r"\s+", " ", nome).strip().lower().split(" ")
+    return " ".join(p if (i > 0 and p in PEQUENAS) else p.title() for i, p in enumerate(palavras))
 
 
 def ler_paginas():
@@ -147,7 +154,7 @@ def processar():
         orfaos = [t for t in titulos if t["linha"] not in ligados]
         for t in orfaos:
             usadas.add(t["linha"])
-            orfaos_rel.append(f"p.{numero} {t['nome']} (ND {t['nd']})")
+            orfaos_rel.append((numero, t["nome"], t["nd"]))
         for c in cabecalhos:
             usadas.add(c["linha"])
 
@@ -169,19 +176,28 @@ def processar():
             if nome_desc is None:
                 nome_desc = ultimo_nome  # página de continuação: herda o nome anterior
                 (herdadas if nome_desc else sem_nome_desc).append(f"p.{numero}")
-            chunks.append({"tipo": "descricao", "nome": nome_desc, "nd": None, "nd_obs": None,
-                           "pagina": numero,
-                           "texto": f"{nome_desc or '(nome não identificado)'} (descrição)\n{descricao}"})
+            if nome_desc in EVENTOS:
+                chunks.append({"tipo": "evento", "nome": nome_desc, "nd": EVENTOS[nome_desc],
+                               "nd_obs": None, "pagina": numero,
+                               "texto": f"{nome_desc} (evento, ND {EVENTOS[nome_desc]})\n{descricao}"})
+            else:
+                chunks.append({"tipo": "descricao", "nome": nome_desc, "nd": None, "nd_obs": None,
+                               "pagina": numero,
+                               "texto": f"{nome_desc or '(nome não identificado)'} (descrição)\n{descricao}"})
 
     for i, c in enumerate(chunks):
         c["id"] = i
     SAIDA.write_text(json.dumps(chunks, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    n_fichas = sum(1 for c in chunks if c["tipo"] == "ficha")
-    print("Fichas:", n_fichas)
-    print("Trechos de descrição:", len(chunks) - n_fichas)
+    nomes_fichas = {c["nome"] for c in chunks if c["tipo"] == "ficha"}
+    orfaos_rel = [f"p.{p} {n} (ND {nd})" for p, n, nd in orfaos_rel
+                  if n not in EVENTOS and n not in nomes_fichas]
+    contagem = {t: sum(1 for c in chunks if c["tipo"] == t) for t in ("ficha", "descricao", "evento")}
+    print("Fichas:", contagem["ficha"])
+    print("Trechos de descrição:", contagem["descricao"])
+    print("Trechos de evento:", contagem["evento"])
     print("Fichas sem título:", sem_titulo or "nenhuma")
-    print("Títulos sem ficha na página:", orfaos_rel or "nenhum")
+    print("Títulos sem ficha e sem explicação:", orfaos_rel or "nenhum")
     print("Descrições que herdaram o nome da página anterior:", herdadas or "nenhuma")
     print("Descrições sem nome:", sem_nome_desc or "nenhuma")
     print("Avisos:", avisos or "nenhum")
