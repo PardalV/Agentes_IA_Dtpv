@@ -1,3 +1,5 @@
 .env
 .venv
-
+docs/.*pdf
+Teste2.py
+TestePdf.py
