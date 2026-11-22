@@ -10,7 +10,7 @@ mcp = FastMCP("bestiario", host="127.0.0.1", port=8000)
 
 
 @mcp.tool()
-def obter_ficha_monstro(nome: str, nd: float | None = None) -> str:
+def obter_ficha_monstro(nome: str, nd: float = 0) -> str:
     """Confere se um monstro existe no bestiário e devolve a ficha completa dele
     (atributos, ataques, habilidades), copiada do livro sem alterações.
 
@@ -19,9 +19,10 @@ def obter_ficha_monstro(nome: str, nd: float | None = None) -> str:
 
     Args:
         nome: nome do monstro, como "Balor" ou "Arranha-Rosto" (sem diferenciar acentos).
-        nd: opcional, para escolher uma versão quando o nome tem várias (ex.: Objeto Animado).
+        nd: opcional. Use 0 (padrão) para qualquer versão; informe o ND só para escolher
+            uma versão específica quando o nome tem várias (ex.: Objeto Animado).
     """
-    return fb.obter_ficha(nome, nd)
+    return fb.obter_ficha(nome, nd if nd else None)
 
 
 @mcp.tool()
