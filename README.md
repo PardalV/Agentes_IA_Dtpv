@@ -1,8 +1,8 @@
 # Assistente de Bestiário (Tormenta20): RAG agêntico, MCP, skills, memória e guardrails
 
-**Autor:** [Vinicius Dantas Rodrigues: nome completo] 
-**Disciplina:** [TÓPICOS ESPECIAIS EM INTELIGÊNCIA COMPUTACIONAL A: nome da disciplina e turma] | **Avaliação da Unidade II**
-**Vídeo de demonstração (até 5 min):** [PREENCHER: link público do vídeo]
+**Autor:** Vinicius Dantas Rodrigues
+**Disciplina:** TÓPICOS ESPECIAIS EM INTELIGÊNCIA COMPUTACIONAL A | **Avaliação da Unidade II**
+**Vídeo de demonstração (até 5 min):** PREENCHER: link público do vídeo
 
 ---
 
@@ -294,4 +294,4 @@ Os principais:
 
 ## 7. Créditos e licença do material
 
-*O Fantástico Guia Ilustrado de Ameaças* foi produzido pelo grupo Academia de Mestres, sem fins lucrativos, e é um conteúdo de fã não oficial, não apoiado pela Jambô Editora, baseado no livro Tormenta20. Segundo o próprio PDF, é publicado sob a Open Game License, e a distribuição é gratuita e a venda é proibida. Fonte: [https://drive.google.com/drive/folders/1KO8T580fXPsvzs9KlctYneCma-m4i-G2: link do material]. Este projeto é um trabalho acadêmico, sem fins lucrativos.
+*O Fantástico Guia Ilustrado de Ameaças* foi produzido pelo grupo Academia de Mestres, sem fins lucrativos, e é um conteúdo de fã não oficial, não apoiado pela Jambô Editora, baseado no livro Tormenta20. Segundo o próprio PDF, é publicado sob a Open Game License, e a distribuição é gratuita e a venda é proibida. Fonte: https://drive.google.com/drive/folders/1KO8T580fXPsvzs9KlctYneCma-m4i-G2 - link do material. Este projeto é um trabalho acadêmico, sem fins lucrativos.
