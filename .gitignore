@@ -4,3 +4,20 @@ docs/.*pdf
 Teste2.py
 TestePdf.py
 encontros/
+
+# segredos
+.env
+.streamlit/secrets.toml
+
+# ambiente e cache do Python
+.venv/
+__pycache__/
+*.pyc
+
+# gerados na execução
+data/chroma/
+data/bestiario_extraido.txt
+encontros/
+
+# material de terceiros (baixe pelo link em docs/FONTES.md)
+docs/*.pdf
