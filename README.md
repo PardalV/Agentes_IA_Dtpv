@@ -137,6 +137,9 @@ python servidor_bestiario.py
 
 # 5. terminal 2: interface
 streamlit run app.py
+
+#Obs.: Caso o Streamlit seja bloqueado pelo Windows, execute ele com o Python:
+python -m streamlit run app.py
 ```
 
 Na primeira execução, o `npx` baixa o servidor de arquivos, o que pode demorar. Para testar sem a interface: `python conversar.py` (terminal; `nova` inicia outra conversa e `sair` encerra).
