@@ -118,7 +118,7 @@ Modelo de texto: `gemini-3.1-flash-lite` (configurável pela variável `MODELO_L
 
 ## 4. Como executar
 
-**Requisitos:** Python 3.10 ou superior, Node.js (para o `npx`, testado com v26) e uma chave de API do Gemini (Google AI Studio).
+**Requisitos:** Python 3.14, Node.js (para o `npx`, testado com v26) e uma chave de API do Gemini (Google AI Studio).
 
 ```bash
 # 1. ambiente e dependências
