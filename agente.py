@@ -1,4 +1,5 @@
-"""Agente do bestiário: grafo LangGraph com RAG agêntico, MCP e memória."""
+"""Agente do bestiário: grafo LangGraph com RAG agêntico, MCP, memória e guardrails."""
+import logging
 import os
 import shutil
 from pathlib import Path
@@ -6,7 +7,7 @@ from typing import Annotated, Optional
 
 from dotenv import load_dotenv
 from langchain_chroma import Chroma
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_mcp_adapters.client import MultiServerMCPClient
@@ -16,12 +17,14 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from typing_extensions import TypedDict
 
+from guardrails import detectar_injecao, redigir_saida, valores_sem_fundamento
 from skills import catalogo_de_skills, ler_skill
 
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------- configuração
-MODELO = os.getenv("MODELO_LLM", "gemini-3.1-flash-lite")  # troque aqui (ou no .env)
+MODELO = os.getenv("MODELO_LLM", "gemini-3.5-flash-lite")  # troque aqui (ou no .env)
 MODELO_EMBEDDINGS = "models/gemini-embedding-001"          # o mesmo usado no indexar.py
 PASTA_BANCO = "data/chroma"
 
@@ -30,6 +33,13 @@ PASTA_BANCO = "data/chroma"
 PASTA_ENCONTROS = Path(__file__).parent / "encontros"
 PASTA_ENCONTROS.mkdir(exist_ok=True)
 PASTA_POSIX = PASTA_ENCONTROS.as_posix()  # com "/", para o modelo não errar as barras
+
+PASTAS_LOCAIS_GUARDRAIL = [
+    str(PASTA_ENCONTROS),
+    PASTA_POSIX,
+    str(Path(__file__).parent),
+    Path(__file__).parent.as_posix(),
+]
 
 # Servidores MCP a que o agente se conecta.
 SERVIDORES_MCP = {
@@ -141,6 +151,35 @@ class Estado(TypedDict):
 llm = ChatGoogleGenerativeAI(model=MODELO, max_retries=5)
 
 
+def extrair_texto(mensagem) -> str:
+    """O Gemini pode devolver o conteúdo como lista de blocos; junta só os de texto."""
+    conteudo = getattr(mensagem, "content", mensagem)
+    if isinstance(conteudo, str):
+        return conteudo
+    if isinstance(conteudo, list):
+        return "".join(
+            b.get("text", "") for b in conteudo if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return str(conteudo)
+
+
+def _montar_corpus_turno(mensagens: list[AnyMessage]) -> str:
+    """Coleta mensagens do turno atual (após o último HumanMessage) e resultados de ferramentas."""
+    ultimo_human_idx = 0
+    for i, msg in enumerate(mensagens):
+        if isinstance(msg, HumanMessage):
+            ultimo_human_idx = i
+
+    partes: list[str] = []
+    for msg in mensagens[ultimo_human_idx:]:
+        if isinstance(msg, (HumanMessage, ToolMessage)):
+            texto = extrair_texto(msg)
+            if texto:
+                prefixo = "usuário: " if isinstance(msg, HumanMessage) else ""
+                partes.append(f"{prefixo}{texto}")
+    return "\n".join(partes)
+
+
 async def carregar_ferramentas_mcp():
     """Conecta aos servidores MCP e devolve as ferramentas deles como ferramentas LangChain."""
     cliente = MultiServerMCPClient(SERVIDORES_MCP)
@@ -164,27 +203,94 @@ async def construir_agente(checkpointer=None):
     NOMES_FERRAMENTAS[:] = [t.name for t in ferramentas]
     llm_com_ferramentas = llm.bind_tools(ferramentas)
 
+    async def guardrail_entrada(estado: Estado):
+        """Bloqueia tentativas de injeção ou acesso externo antes de rodar o modelo."""
+        mensagens = estado["messages"]
+        if not mensagens or not isinstance(mensagens[-1], HumanMessage):
+            return {"messages": []}
+
+        texto_usuario = extrair_texto(mensagens[-1])
+        motivo = detectar_injecao(texto_usuario)
+        if motivo:
+            logger.warning("Guardrail de entrada acionado (%s): %r", motivo, texto_usuario)
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "Não posso atender a esse pedido por questões de segurança "
+                            f"({motivo}). Posso ajudar com monstros do bestiário, encontros e rolagens."
+                        )
+                    )
+                ]
+            }
+        return {"messages": []}
+
+    def rota_apos_entrada(estado: Estado) -> str:
+        mensagens = estado["messages"]
+        if len(mensagens) >= 2 and isinstance(mensagens[-2], HumanMessage) and isinstance(mensagens[-1], AIMessage):
+            return "fim"
+        return "agente"
+
     async def no_agente(estado: Estado):
         """Chama o modelo com o prompt de sistema + a conversa até agora."""
         mensagens = [SystemMessage(content=PROMPT_SISTEMA)] + estado["messages"]
         resposta = await llm_com_ferramentas.ainvoke(mensagens)
         return {"messages": [resposta]}
 
+    async def guardrail_saida(estado: Estado):
+        """Sanitiza vazamentos e sinaliza valores de PV/Defesa sem respaldo nas ferramentas."""
+        mensagens = estado["messages"]
+        if not mensagens or not isinstance(mensagens[-1], AIMessage):
+            return {"messages": []}
+
+        ultima = mensagens[-1]
+        texto_original = extrair_texto(ultima)
+        if not texto_original:
+            return {"messages": []}
+
+        texto_limpo, avisos = redigir_saida(texto_original, PASTAS_LOCAIS_GUARDRAIL)
+        for aviso in avisos:
+            logger.warning("Guardrail de saída: %s", aviso)
+
+        corpus = _montar_corpus_turno(mensagens)
+        suspeitos = valores_sem_fundamento(texto_limpo, corpus)
+        if suspeitos:
+            logger.warning("Valores de PV/Defesa sem respaldo no corpus: %s", suspeitos)
+            aviso_valores = ", ".join(suspeitos)
+            texto_limpo = (
+                f"{texto_limpo}\n\n"
+                f"*(Aviso: os valores de PV/Defesa [{aviso_valores}] não apareceram "
+                "diretamente nos resultados das ferramentas deste turno.)*"
+            )
+
+        if texto_limpo != texto_original:
+            return {"messages": [AIMessage(content=texto_limpo, id=ultima.id)]}
+        return {"messages": []}
+
+    def rota_apos_agente(estado: Estado) -> str:
+        # Se o modelo chamou ferramentas, vai para o nó "ferramentas"; senão, valida a saída.
+        if tools_condition(estado) == "tools":
+            return "ferramentas"
+        return "guardrail_saida"
+
     grafo = StateGraph(Estado)
+    grafo.add_node("guardrail_entrada", guardrail_entrada)
     grafo.add_node("agente", no_agente)
     grafo.add_node("ferramentas", ToolNode(ferramentas))
+    grafo.add_node("guardrail_saida", guardrail_saida)
 
-    grafo.add_edge(START, "agente")
-    # Se a resposta do modelo pede ferramenta -> "ferramentas"; senão -> fim.
-    grafo.add_conditional_edges("agente", tools_condition, {"tools": "ferramentas", END: END})
-    grafo.add_edge("ferramentas", "agente")  # depois da ferramenta, o modelo lê o resultado
+    grafo.add_edge(START, "guardrail_entrada")
+    grafo.add_conditional_edges(
+        "guardrail_entrada",
+        rota_apos_entrada,
+        {"fim": END, "agente": "agente"},
+    )
+    grafo.add_conditional_edges(
+        "agente",
+        rota_apos_agente,
+        {"ferramentas": "ferramentas", "guardrail_saida": "guardrail_saida"},
+    )
+    grafo.add_edge("ferramentas", "agente")
+    grafo.add_edge("guardrail_saida", END)
 
     return grafo.compile(checkpointer=checkpointer or MemorySaver())
-
-
-def extrair_texto(mensagem) -> str:
-    """O Gemini pode devolver o conteúdo como lista de blocos; junta só os de texto."""
-    conteudo = mensagem.content
-    if isinstance(conteudo, str):
-        return conteudo
-    return "".join(b.get("text", "") for b in conteudo if isinstance(b, dict) and b.get("type") == "text")
