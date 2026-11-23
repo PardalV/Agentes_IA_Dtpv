@@ -39,6 +39,20 @@ def listar_monstros_por_nd(nd_min: float = 0, nd_max: float = 99, incluir_evento
 
 
 @mcp.tool()
+def planejar_encontro(nivel: int, dificuldade: str = "padrao", quantidade: int = 3) -> str:
+    """Calcula, pela heurística do projeto (o livro não traz regra de balanceamento), o ND alvo
+    de um encontro, o ND de cada monstro e a faixa de ND para buscar candidatos, e já lista os
+    monstros dessa faixa. Use no início de montar um encontro, no lugar de fazer a conta à mão.
+
+    Args:
+        nivel: nível do grupo (grupo de referência: 4 jogadores).
+        dificuldade: "facil", "padrao", "dificil" ou "mortal".
+        quantidade: quantos monstros o encontro terá (de 1 a 8).
+    """
+    return fb.planejar_encontro(nivel, dificuldade, quantidade)
+
+
+@mcp.tool()
 def rolar_dados(expressao: str) -> str:
     """Rola dados e soma os resultados. Aceita expressões como "1d20+13", "2d6+3"
     ou "3d8+13+4d6" (várias parcelas). Use para ataques, danos, iniciativa e testes."""

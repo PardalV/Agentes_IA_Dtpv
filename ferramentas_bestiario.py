@@ -164,6 +164,41 @@ def listar_monstros(nd_min=0, nd_max=99, incluir_eventos=False):
         f"Nenhum monstro com ND entre {_fmt_nd(nd_min)} e {_fmt_nd(nd_max)}."
 
 
+# Heurística do projeto para montar encontros (o livro NÃO traz regra de balanceamento).
+AJUSTE_DIFICULDADE = {"facil": -2, "padrao": 0, "dificil": 2, "mortal": 4}
+SUBTRAIR_POR_QUANTIDADE = {1: 0, 2: 2, 3: 3, 4: 4, 5: 5, 6: 5, 7: 6, 8: 6}
+
+
+def planejar_encontro(nivel, dificuldade="padrao", quantidade=3):
+    chave = _normalizar(dificuldade)
+    if chave not in AJUSTE_DIFICULDADE:
+        return "Dificuldade inválida. Use: fácil, padrão, difícil ou mortal."
+    quantidade = int(quantidade)
+    if quantidade not in SUBTRAIR_POR_QUANTIDADE:
+        return "A quantidade de monstros deve ser de 1 a 8."
+
+    ajuste = AJUSTE_DIFICULDADE[chave]
+    alvo = nivel + ajuste
+    menor_nd = min(float(f["nd"]) for f in _fichas() if f["nd"] is not None)
+    por_monstro = alvo - SUBTRAIR_POR_QUANTIDADE[quantidade]
+    aviso = ""
+    if por_monstro < menor_nd:
+        por_monstro = menor_nd
+        aviso = (f"\nAviso: o ND por monstro ficaria abaixo do menor ND do livro "
+                 f"({_fmt_nd(menor_nd)}); foi usado o menor disponível.")
+    faixa_min = max(menor_nd, por_monstro - 1)
+    faixa_max = por_monstro + 1
+
+    return (
+        "HEURÍSTICA DO PROJETO (o livro não traz regra de balanceamento).\n"
+        f"- Grupo de nível {nivel}, dificuldade {chave} (ajuste {ajuste:+d}): ND alvo = {_fmt_nd(alvo)}.\n"
+        f"- Com {quantidade} monstro(s): ND de cada monstro = {_fmt_nd(por_monstro)}.\n"
+        f"- Faixa de busca (ND por monstro, 1 para mais e para menos): {_fmt_nd(faixa_min)} a {_fmt_nd(faixa_max)}."
+        f"{aviso}\n\nCandidatos nessa faixa (sem filtro de tema):\n"
+        + listar_monstros(faixa_min, faixa_max)
+    )
+
+
 def rolar_dados(expressao):
     texto = expressao.replace(" ", "").lower()
     if not re.fullmatch(r"([+-]?(\d*d\d+|\d+))+", texto):

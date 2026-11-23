@@ -16,6 +16,8 @@ from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 from typing_extensions import TypedDict
 
+from skills import catalogo_de_skills, ler_skill
+
 load_dotenv()
 
 # ---------------------------------------------------------------- configuração
@@ -59,7 +61,9 @@ Ferramentas:
 "evento"). Serve para descobrir monstros por descrição, tema ou habilidade.
 - obter_ficha_monstro: devolve a ficha exata de um monstro pelo nome e confirma se ele existe.
 - listar_monstros_por_nd: lista os monstros de uma faixa de nível de desafio (ND).
+- planejar_encontro: calcula o ND alvo e a faixa de ND para um encontro (heurística do projeto).
 - rolar_dados: rola dados (ex.: "1d20+13", "3d8+13+4d6").
+- carregar_skill: carrega as instruções completas de uma skill do catálogo (abaixo).
 - write_file, read_text_file, list_directory, create_directory: arquivos do mestre, SOMENTE \
 dentro da pasta {PASTA_POSIX}.
 
@@ -84,6 +88,8 @@ ND, e cada monstro com página e atributos principais tirados das fichas). Se um
 arquivo falhar, conte o erro ao usuário e não diga que salvou.
 - Use somente o que veio das ferramentas. Nunca invente atributos, números ou habilidades.
 - Responda em português do Brasil, de forma objetiva, citando o nome do monstro e a página."""
+
+PROMPT_SISTEMA += "\n\n" + catalogo_de_skills()
 
 
 # --------------------------------------------------- ferramenta local (RAG)
@@ -114,6 +120,18 @@ def buscar_bestiario(consulta: str, tipo: Optional[str] = None) -> str:
     return "\n\n---\n\n".join(partes)
 
 
+@tool
+def carregar_skill(nome: str) -> str:
+    """Carrega as instruções completas de uma skill (procedimento de várias etapas).
+
+    Chame ANTES de executar uma tarefa que combine com uma skill do catálogo.
+
+    Args:
+        nome: nome exato da skill, como aparece no catálogo (ex.: "montar-encontro").
+    """
+    return ler_skill(nome)
+
+
 # ------------------------------------------------------------------------ grafo
 class Estado(TypedDict):
     # add_messages: cada nó devolve mensagens novas e elas são ACRESCENTADAS à lista
@@ -136,7 +154,13 @@ async def carregar_ferramentas_mcp():
 
 async def construir_agente(checkpointer=None):
     ferramentas_mcp = await carregar_ferramentas_mcp()
-    ferramentas = [buscar_bestiario, *ferramentas_mcp]
+    ferramentas = [buscar_bestiario, carregar_skill, *ferramentas_mcp]
+    # Os servidores MCP mandam "$schema" no esquema das ferramentas e o Gemini não aceita
+    # essa chave (gera um aviso a cada chamada). Tiramos antes de entregar ao modelo.
+    for ferramenta in ferramentas:
+        esquema = getattr(ferramenta, "args_schema", None)
+        if isinstance(esquema, dict):
+            esquema.pop("$schema", None)
     NOMES_FERRAMENTAS[:] = [t.name for t in ferramentas]
     llm_com_ferramentas = llm.bind_tools(ferramentas)
 
