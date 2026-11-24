@@ -2,7 +2,7 @@
 
 **Autor:** Vinicius Dantas Rodrigues
 **Disciplina:** TÓPICOS ESPECIAIS EM INTELIGÊNCIA COMPUTACIONAL A | **Avaliação da Unidade II**
-**Vídeo de demonstração (até 5 min):** PREENCHER: [link público do vídeo](https://youtu.be/HEIvkeXiQXA)
+**Vídeo de demonstração (até 5 min):** [link público do vídeo](https://youtu.be/HEIvkeXiQXA)
 
 ---
 
